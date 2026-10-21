@@ -3,10 +3,16 @@ on:
   push:
     paths:
       - 'Plain Craft Launcher 2/**'
+      - 'PCLCS/**'
+      - 'MeloongCore'
+      - '.gitmodules'
       - '.github/workflows/**'
   pull_request:
     paths:
       - 'Plain Craft Launcher 2/**'
+      - 'PCLCS/**'
+      - 'MeloongCore'
+      - '.gitmodules'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -24,7 +30,29 @@ jobs:
       uses: actions/checkout@v6
       with:
         fetch-depth: 1
-        submodules: true
+        submodules: recursive
+
+    - name: Ensure MeloongCore dependency
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $coreEntry = git ls-files --stage -- MeloongCore
+        if ($coreEntry -match '^160000 ') {
+          git submodule update --init --recursive -- MeloongCore
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize MeloongCore submodule.' }
+        } elseif (-not (Test-Path 'MeloongCore/Shared/MeloongCore.csproj')) {
+          # Source ZIP imports have no gitlink. Use the dependency pinned by PCL 2.99.0.0.
+          $coreRevision = '98157d65c7627721c816c02e8be96ac4fe61d615'
+          git clone --no-checkout https://github.com/Meloong-Git/MeloongCore.git MeloongCore
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to clone MeloongCore.' }
+          git -C MeloongCore checkout --detach $coreRevision
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to check out the pinned MeloongCore revision.' }
+          git -C MeloongCore submodule update --init --recursive
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to initialize nested MeloongCore dependencies.' }
+        }
+        foreach ($project in @('MeloongCore/Shared/MeloongCore.csproj', 'MeloongCore/Wpf/MeloongCore.Wpf.csproj')) {
+          if (-not (Test-Path $project)) { throw "Missing required project: $project" }
+        }
 
     - name: Set Describe
       shell: bash
